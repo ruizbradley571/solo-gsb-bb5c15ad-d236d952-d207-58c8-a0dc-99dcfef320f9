@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
 import type { ChapterLoudness } from '../audio/loudness';
 import type { Chapter, SortKey } from '../types';
+import type { ChapterCoverage } from '../utils/transcriptCoverage';
 import { formatTime } from '../utils/time';
 
 interface ChapterListProps {
   chapters: Chapter[];
   selectedId: string | null;
   loudness?: Map<string, ChapterLoudness> | null;
+  coverage?: Map<string, ChapterCoverage> | null;
   lockedIds?: ReadonlySet<string>;
   chainEnabled?: boolean;
   onSelect: (id: string) => void;
@@ -31,11 +33,18 @@ function statusText(q: ChapterLoudness): string {
   }（点击从首个异常处预览）`;
 }
 
+function coverageClass(ratio: number): string {
+  if (ratio >= 0.9) return 'cov-high';
+  if (ratio >= 0.5) return 'cov-mid';
+  return 'cov-low';
+}
+
 export function ChapterList(props: ChapterListProps) {
   const {
     chapters,
     selectedId,
     loudness,
+    coverage,
     lockedIds,
     chainEnabled,
     onSelect,
@@ -95,6 +104,7 @@ export function ChapterList(props: ChapterListProps) {
         )}
         {visible.map((c) => {
           const q = loudness?.get(c.id);
+          const cov = coverage?.get(c.id);
           const locked = lockedIds?.has(c.id) ?? false;
           return (
             <div
@@ -139,6 +149,16 @@ export function ChapterList(props: ChapterListProps) {
                     {STATUS_LABEL[q.status]}
                     {q.meanDbfs !== null && ` ${q.meanDbfs.toFixed(0)}dB`}
                     {q.allSilent && ' · 静音'}
+                  </span>
+                )}
+                {cov && (
+                  <span
+                    className={`coverage-pill ${coverageClass(cov.ratio)}`}
+                    title={`逐字稿覆盖：${cov.coveredSeconds.toFixed(1)}s / ${(c.end - c.start).toFixed(1)}s（${(
+                      cov.ratio * 100
+                    ).toFixed(1)}%），相交字幕 ${cov.cues.length} 条；选中该章可在右侧查看并点击跳转试听`}
+                  >
+                    📝 {(cov.ratio * 100).toFixed(0)}%
                   </span>
                 )}
               </div>

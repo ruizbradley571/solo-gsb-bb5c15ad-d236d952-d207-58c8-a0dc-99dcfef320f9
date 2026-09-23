@@ -24,6 +24,7 @@ import { ImportDialog } from './components/ImportDialog';
 import { LoudnessPanel } from './components/LoudnessPanel';
 import { SilencePanel } from './components/SilencePanel';
 import { TransportBar } from './components/TransportBar';
+import { TranscriptPanel, type LoadedTranscript } from './components/TranscriptPanel';
 import { useChapters } from './hooks/useChapters';
 import type { Chapter, Peaks } from './types';
 import {
@@ -40,6 +41,11 @@ import {
   type PreviewEntry,
 } from './utils/importChapters';
 import { formatTime } from './utils/time';
+import {
+  clipTranscriptCues,
+  computeTranscriptCoverage,
+  parseTranscriptVtt,
+} from './utils/transcriptCoverage';
 
 const NUDGE_FINE = 0.05;
 const NUDGE_COARSE = 1;
@@ -110,6 +116,13 @@ export default function App() {
   // 应用时按此快照合并，保证“预览所见即应用所得”，失败不写任何内容
   const previewExistingRef = useRef<Chapter[]>([]);
   const previewDurationRef = useRef(0);
+
+  // ---- 本地 WebVTT 逐字稿覆盖核对（字幕不导入为章节，仅统计时间交集）----
+  const transcriptFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [transcript, setTranscript] = useState<LoadedTranscript | null>(null);
+  const [transcriptError, setTranscriptError] = useState<string | null>(null);
+  // 连续选择两个逐字稿时，先完成读取的旧文件不得覆盖新选择
+  const transcriptTokenRef = useRef(0);
 
   /** 弹出一条临时提示；同一手势内相同 key 的提示不重复弹出。 */
   const showNotice = useCallback((msg: string, key: string) => {
@@ -371,12 +384,67 @@ export default function App() {
     [importPreview, chaptersApi, showNotice, closeImportDialog],
   );
 
-  // a new audio file invalidates any open import preview
+  // a new audio file invalidates any open import preview AND the loaded
+  // transcript: cues clipped against the old duration never carry over
   useEffect(() => {
     previewExistingRef.current = [];
     setImportPreview(null);
     setImportError(null);
+    transcriptTokenRef.current += 1;
+    setTranscript(null);
+    setTranscriptError(null);
   }, [fileName]);
+
+  // ---- 逐字稿：读取本地 WebVTT 并按当前时长裁剪；不会产生任何章节 ----
+  const onTranscriptFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    const token = ++transcriptTokenRef.current;
+    setTranscriptError(null);
+    f.text()
+      .then((text) => {
+        if (token !== transcriptTokenRef.current) return; // 又选了更新的文件
+        try {
+          const { cues: rawCues, skipped } = parseTranscriptVtt(text);
+          const clipped = clipTranscriptCues(rawCues, duration);
+          const outOfRange = rawCues.length - clipped.length;
+          if (clipped.length === 0) {
+            setTranscript(null);
+            setTranscriptError(
+              `逐字稿中没有时间落在当前音频（0 ~ ${duration.toFixed(1)}s）内的有效字幕。`,
+            );
+            return;
+          }
+          setTranscript({
+            fileName: f.name,
+            cues: clipped,
+            parseSkipped: skipped,
+            outOfRange,
+          });
+        } catch (err) {
+          setTranscript(null);
+          setTranscriptError(err instanceof Error ? err.message : '逐字稿解析失败。');
+        }
+      })
+      .catch(() => {
+        if (token !== transcriptTokenRef.current) return;
+        setTranscriptError('文件无法读取。');
+      });
+  };
+
+  /** 移除当前逐字稿；进行中的旧读取一并作废。 */
+  const removeTranscript = useCallback(() => {
+    transcriptTokenRef.current += 1;
+    setTranscript(null);
+    setTranscriptError(null);
+  }, []);
+
+  // 章节边界编辑（移动 / 缩放 / 增删 / 撤销重做）后即时重算：只依赖章节与逐字稿
+  const transcriptCoverage = useMemo(
+    () => (transcript ? computeTranscriptCoverage(chapters, transcript.cues) : null),
+    [transcript, chapters],
+  );
 
   const seek = useCallback(
     (t: number) => {
@@ -577,6 +645,14 @@ export default function App() {
           onChange={onImportFileInput}
           hidden
         />
+        {/* 逐字稿载入入口在右侧「逐字稿覆盖核对」面板内；字幕不作为章节导入 */}
+        <input
+          ref={transcriptFileInputRef}
+          type="file"
+          accept=".vtt,text/vtt"
+          onChange={onTranscriptFileInput}
+          hidden
+        />
         <button
           disabled={chapters.length === 0}
           onClick={() => downloadFile(`${baseName}.vtt`, toWebVTT(chapters), 'text/vtt')}
@@ -679,6 +755,7 @@ export default function App() {
               chapters={chapters}
               selectedId={selectedId}
               loudness={chapterLoudness}
+              coverage={transcriptCoverage?.byChapter ?? null}
               lockedIds={chaptersApi.lockedIds}
               chainEnabled={chaptersApi.chainMode}
               onSelect={(id) => {
@@ -696,6 +773,18 @@ export default function App() {
               }}
             />
             <aside className="detail-panel">
+              <TranscriptPanel
+                transcript={transcript}
+                parseError={transcriptError}
+                duration={duration}
+                totalCoveredSeconds={transcriptCoverage?.totalCoveredSeconds ?? 0}
+                chapterCount={chapters.length}
+                selected={selected}
+                selectedCoverage={selected ? transcriptCoverage?.byChapter.get(selected.id) ?? null : null}
+                onPickFile={() => transcriptFileInputRef.current?.click()}
+                onRemove={removeTranscript}
+                onPreviewAt={previewFrom}
+              />
               <SilencePanel
                 thresholdDb={silenceThresholdDb}
                 minSilenceSec={minSilenceSec}
