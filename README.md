@@ -1,6 +1,6 @@
 # 播客章节标注工作台 (Podcast Chapter Studio)
 
-基于 **React + TypeScript + Web Audio API** 的网页播客章节标注工具：导入本地音频后，在可缩放波形上拖拽创建、移动、调整章节区间，自动吸附邻近边界并阻止重叠，支持键盘微调、章节搜索/排序、选中片段实时预览，并导出带章节标题的 **WebVTT** 和 **JSON** 文件；也支持从本地 **JSON / WebVTT 章节文件导入**：解析后按当前音频时长逐条校验，在预览对话框中标出新增、时间越界、与现有章节重叠等状态，可只应用勾选的有效条目，整次导入为一个可撤销步骤。所有章节编辑（创建、移动、缩放、重命名、删除、「应用全部候选」以及章节文件导入）均记录为**可撤销 / 重做**的可逆操作，工具条按钮与 `Ctrl/Cmd+Z`、`Ctrl/Cmd+Shift+Z` 快捷键均可使用，撤销 / 重做不影响当前播放状态。内置**静音切分建议**：按 100ms 窗口分析多声道 RMS，自动在静音中点给出候选切分边界，可一键应用。另内置**章节音量一致性质检**：按 200ms 窗口计算多声道合并 dBFS，以窗口与章节的实际重叠时长加权汇总每章平均音量与动态范围，可自定义过轻 / 过响阈值，异常区间在波形上着色、点击即可从该处预览，并随 JSON 一并导出。支持**章节淡入淡出试听**：每章可独立设置 0～5 秒的淡入 / 淡出时长与开关，预览时按实际播放区间构建增益包络，淡入从静音平滑升至原音量、淡出在章尾前降至静音。另有**连锁移动模式**：锁定任意章节后，拖动 / 缩放未锁定章节会把边界位移原样传递给其后的未锁定章节（间隔与各章时长不变），遇到锁定章节或音频边界自动钳制并提示原因，一次拖拽连带变更整体可撤销 / 重做；锁定状态仅保留在当前会话，不影响导出格式。
+基于 **React + TypeScript + Web Audio API** 的网页播客章节标注工具：导入本地音频后，在可缩放波形上拖拽创建、移动、调整章节区间，自动吸附邻近边界并阻止重叠，支持键盘微调、章节搜索/排序、选中片段实时预览，并导出带章节标题的 **WebVTT** 和 **JSON** 文件；也支持从本地 **JSON / WebVTT 章节文件导入**：解析后按当前音频时长逐条校验，在预览对话框中标出新增、时间越界、与现有章节重叠等状态，可只应用勾选的有效条目，整次导入为一个可撤销步骤。所有章节编辑（创建、移动、缩放、重命名、删除、「应用全部候选」以及章节文件导入）均记录为**可撤销 / 重做**的可逆操作，工具条按钮与 `Ctrl/Cmd+Z`、`Ctrl/Cmd+Shift+Z` 快捷键均可使用，撤销 / 重做不影响当前播放状态。内置**静音切分建议**：按 100ms 窗口分析多声道 RMS，自动在静音中点给出候选切分边界，可一键应用。另内置**章节音量一致性质检**：按 200ms 窗口计算多声道合并 dBFS，以窗口与章节的实际重叠时长加权汇总每章平均音量与动态范围，可自定义过轻 / 过响阈值，异常区间在波形上着色、点击即可从该处预览，并随 JSON 一并导出。支持**章节淡入淡出试听**：每章可独立设置 0～5 秒的淡入 / 淡出时长与开关，预览时按实际播放区间构建增益包络，淡入从静音平滑升至原音量、淡出在章尾前降至静音。另有**连锁移动模式**：锁定任意章节后，拖动 / 缩放未锁定章节会把边界位移原样传递给其后的未锁定章节（间隔与各章时长不变），遇到锁定章节或音频边界自动钳制并提示原因，一次拖拽连带变更整体可撤销 / 重做；锁定状态仅保留在当前会话，不影响导出格式。另提供**逐字稿覆盖核对**：在右侧面板载入本地 WebVTT 逐字稿（字幕 cue 仅作覆盖参照，**不会作为章节导入**），按字幕与章节的时间交集统计每章有文字覆盖的秒数与占比——越界区间先裁剪、重叠 cue 合并后同一秒只计一次、跨章 cue 分别计入相交部分；各章覆盖率与相交字幕实时列出，点击字幕即跳到该时间试听，章节边界一改即重算，更换音频自动清空旧逐字稿。
 
 ## 一键启动（Docker Compose）
 
@@ -37,7 +37,7 @@ PORT=9090 docker compose up --build
 ```bash
 npm install
 npm run dev        # Vite 开发服务器，访问 http://localhost:5173 （已对局域网监听 0.0.0.0）
-npm test           # 章节吸附/防重叠 + 连锁移动 + 撤销/重做历史 + 静音切分 + 音量质检 + 淡入淡出包络 + 章节文件导入核心逻辑测试
+npm test           # 章节吸附/防重叠 + 连锁移动 + 撤销/重做历史 + 静音切分 + 音量质检 + 淡入淡出包络 + 章节文件导入 + 逐字稿覆盖核对核心逻辑测试
 npm run build      # 产出 dist/（峰值计算代码会被打成独立的 Worker chunk）
 ```
 
@@ -77,6 +77,12 @@ npm run build      # 产出 dist/（峰值计算代码会被打成独立的 Work
   - 淡入 + 淡出超过章节长度时，按两者之和**等比例压缩**到刚好铺满整章；面板实时显示压缩后的实际生效时长。
   - 暂停、拖动播放头、重复预览或修改参数都会先停止旧音源并拆除旧包络再重建，不会叠加残留声音；关闭开关立即恢复原始（无淡入淡出）预览。
   - 淡入淡出设置仅为预览用界面状态，不写入章节数据，WebVTT / JSON 导出格式不变。
+- **逐字稿覆盖核对**：右侧「逐字稿覆盖核对」面板点「载入 WebVTT 逐字稿」选择本地 `*.vtt` 字幕（与「导入章节」相互独立，**字幕 cue 绝不会被当作章节导入**，章节 JSON 也不会被当作逐字稿接受）。
+  - 载入时先按当前音频时长**裁剪越界区间**：超出音频结尾的 cue 截到结尾、与音频无交集的 cue 丢弃，时间码无法解析的 cue 跳过并在面板提示忽略数量。
+  - 每章按字幕与章节区间的**时间交集**统计覆盖：先把相交片段**合并重叠**（重叠 / 相邻 cue 不重复计时），再以 1 秒为粒度统计有文字覆盖的整秒数，**同一秒只计一次**；覆盖率 = 覆盖秒数 / 章节跨越的整秒数（短于 1 秒的章节分母按 1 秒计）。
+  - **跨章 cue 分别计入相交部分**：一条字幕横跨章节边界时，各章只统计落在自己区间内的片段（该 cue 同时出现在相关章节的字幕列表中），绝不按整条字幕归到某一章。
+  - 面板按章节列出覆盖率（覆盖秒数 / 章节秒数 + 百分比与进度条，绿 ≥90% / 黄 ≥50% / 红 &lt;50%）与全部章节合计；展开任一章节可看其**相交字幕**（显示裁剪后的相交时间与文本），**点击任意字幕即跳到该时间开始试听**。
+  - 覆盖率是当前章节与逐字稿的派生结果：**拖动 / 缩放章节边界、新增 / 删除 / 撤销 / 重做后即时重算**，无需重新载入。点「移除」可手动清除；**更换音频时自动清空旧逐字稿**（及其正在读取的文件）。
 
 ### 快捷键
 
@@ -128,6 +134,7 @@ npm run build      # 产出 dist/（峰值计算代码会被打成独立的 Work
 - 撤销 / 重做为快照式历史栈（`src/utils/history.ts` 纯函数：`record` / `undo` / `redo`）：每条记录保存变更前后的章节数组，新记录即清空重做栈，同 `mergeKey` 且在 800ms 合并窗口内的连续编辑（拖拽、键盘连按、标题连续输入）合并为单步，栈深上限 200；由 `scripts/test-history.ts` 覆盖（含一次连锁拖拽的锚点+随动章节整体恢复用例）。历史状态保存在 `useChapters` 的 ref 中（提交时同步镜像章节数据，避免在 React state updater 内产生副作用），导入新音频调用 `reset()` 一并清空，撤销 / 重做不触碰播放引擎与锁定集合。章节锁定与连锁开关为 `useChapters` 中的会话级 state（不进入 `Chapter` 数据、不导出、不参与历史）。
 - 章节文件导入为独立纯函数模块 `src/utils/importChapters.ts`（`parseWebVTT` / `parseJSONChapters` / `buildImportPreview` / `applyImportedChapters`）：WebVTT 时间码支持 `HH:MM:SS.mmm`、`MM:SS.mmm` 与逗号小数，逐行解析失败不影响其他 cue；预览按文件顺序把每条 cue 判定为新增 / 时间越界 / 重叠 / 无法解析（与现有章节或较早有效 cue 的互斥冲突归责较晚者，保证有效集合两两不重叠）；应用时只取勾选的有效行，重新生成唯一 id、与现有章节合并排序并整体复验，任何越界 / 过短 / 重叠都抛错且不写入（全有或全无），随后由 `useChapters.replaceAll` 作为**单个历史步骤**提交；由 `scripts/test-importChapters.ts` 覆盖（含本工具 JSON 导出的往返导入与失败不写入用例）。
 - 淡入淡出包络为纯函数（`src/audio/fade.ts`：`fitFadeTimes` 等比例压缩、`buildFadeCurve` 生成曲线关键点），由 `scripts/test-fade.ts` 覆盖；播放时 `AudioEngine` 为每次预览挂一个独立的 `GainNode` 包络（source → envelope → 主增益），停止 / 重建时取消自动化并断开节点，杜绝残留声音。
+- 逐字稿覆盖核对为独立纯函数模块 `src/utils/transcript.ts`（`loadTranscript` / `chapterCoverage` / `coverageByChapters` / `mergeIntervals`），复用章节导入的 `parseWebVTT` 解析字幕、但产物只作为覆盖参照、不产生任何章节：载入时把 cue 裁剪到 `[0, duration]`；每章收集 cue 与章节区间的**相交片段**（跨边界 cue 在每章各取其片段），合并重叠 / 相邻片段后用整秒格 `[k, k+1)` 统计覆盖秒数，保证重叠 cue 的同一秒不重复计数，覆盖率以章节跨越的整秒格为分母（短章至少 1 格）；覆盖率由章节 state 经 `useMemo` 派生，任何边界编辑后即时重算，由 `scripts/test-transcript.ts` 覆盖（含越界裁剪、重叠去重、跨章拆分与零交集用例）。逐字稿 state 仅存活在当前音频会话，换音频（`fileName` 变化）即清空，在途文件读取以单调 token 作废。
 - 播放基于 Web Audio API：`AudioBufferSourceNode` 支持带结束点的片段预览，播放头由 rAF 驱动。
 - Docker 为多阶段构建：`node:20-alpine` 构建 → `nginx:1.27-alpine` 托管静态文件。
 
@@ -139,13 +146,14 @@ npm run build      # 产出 dist/（峰值计算代码会被打成独立的 Work
 ├── nginx.conf              # SPA 回退 + 静态资源缓存
 ├── src/
 │   ├── audio/              # AudioEngine（播放/片段预览/淡入淡出包络）、fade（包络曲线）、peaks（波形峰值纯函数 + 主线程兜底）、peaks.worker（峰值计算 Web Worker）、PeaksWorkerClient（Worker 客户端：只传声道副本、旧任务作废、失败可重试）、silence（静音 RMS/候选边界）、loudness（200ms dBFS/章节质检）
-│   ├── components/         # Waveform（锁定标识/连锁随动高亮/止点墙） / ChapterList（锁定按钮）/ ChainBar（连锁开关+实时摘要） / ImportDialog（JSON/WebVTT 导入预览）/ TransportBar / SilencePanel / LoudnessPanel / FadePanel
+│   ├── components/         # Waveform（锁定标识/连锁随动高亮/止点墙） / ChapterList（锁定按钮）/ ChainBar（连锁开关+实时摘要） / ImportDialog（JSON/WebVTT 导入预览）/ TranscriptPanel（WebVTT 逐字稿载入/覆盖率/相交字幕试听）/ TransportBar / SilencePanel / LoudnessPanel / FadePanel
 │   ├── hooks/useChapters.ts  # 章节增删改 + 撤销/重做历史 + 会话级锁定/连锁开关（reset 随导入清空）+ replaceAll 整表事务
 │   ├── utils/chapterOps.ts # 吸附、防重叠、空档查找（纯函数）
 │   ├── utils/chainOps.ts   # 连锁移动/缩放、止点钳制与原因、连锁预览方案（纯函数）
 │   ├── utils/snap.ts       # 最近边界吸附（纯函数）
 │   ├── utils/history.ts    # 撤销/重做快照栈、连续编辑合并、重做栈清空（纯函数）
 │   ├── utils/export.ts     # WebVTT / JSON（含章节质检指标）导出
-│   └── utils/importChapters.ts # WebVTT / JSON 解析、逐条校验预览、全有或全无合并（纯函数）
-└── scripts/                # test-chapterOps、test-chainOps、test-history、test-silence、test-loudness、test-fade、test-importChapters
+│   ├── utils/importChapters.ts # WebVTT / JSON 解析、逐条校验预览、全有或全无合并（纯函数）
+│   └── utils/transcript.ts # 逐字稿载入（裁剪越界 cue）、按交集/整秒格统计章节覆盖率（纯函数，字幕不导入）
+└── scripts/                # test-chapterOps、test-chainOps、test-history、test-silence、test-loudness、test-fade、test-importChapters、test-transcript
 ```

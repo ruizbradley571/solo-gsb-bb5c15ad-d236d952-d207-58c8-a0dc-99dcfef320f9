@@ -23,6 +23,7 @@ import { FadePanel } from './components/FadePanel';
 import { ImportDialog } from './components/ImportDialog';
 import { LoudnessPanel } from './components/LoudnessPanel';
 import { SilencePanel } from './components/SilencePanel';
+import { TranscriptPanel } from './components/TranscriptPanel';
 import { TransportBar } from './components/TransportBar';
 import { useChapters } from './hooks/useChapters';
 import type { Chapter, Peaks } from './types';
@@ -40,6 +41,11 @@ import {
   type PreviewEntry,
 } from './utils/importChapters';
 import { formatTime } from './utils/time';
+import {
+  coverageByChapters,
+  loadTranscript,
+  type Transcript,
+} from './utils/transcript';
 
 const NUDGE_FINE = 0.05;
 const NUDGE_COARSE = 1;
@@ -110,6 +116,13 @@ export default function App() {
   // 应用时按此快照合并，保证“预览所见即应用所得”，失败不写任何内容
   const previewExistingRef = useRef<Chapter[]>([]);
   const previewDurationRef = useRef(0);
+
+  // 逐字稿覆盖核对：WebVTT 仅作覆盖参照，绝不作为章节导入
+  const transcriptInputRef = useRef<HTMLInputElement | null>(null);
+  const [transcript, setTranscript] = useState<Transcript | null>(null);
+  const [transcriptError, setTranscriptError] = useState<string | null>(null);
+  // 每次选文件自增；切走/清除时也自增，使在途读取结果作废
+  const transcriptTokenRef = useRef(0);
 
   /** 弹出一条临时提示；同一手势内相同 key 的提示不重复弹出。 */
   const showNotice = useCallback((msg: string, key: string) => {
@@ -378,6 +391,49 @@ export default function App() {
     setImportError(null);
   }, [fileName]);
 
+  // ---- 逐字稿覆盖核对（WebVTT 载入本地，仅统计覆盖率；不导入为章节）----
+  /** 清空旧逐字稿（换音频 / 手动移除），同时作废任何在途文件读取。 */
+  const clearTranscript = useCallback(() => {
+    transcriptTokenRef.current += 1;
+    setTranscript(null);
+    setTranscriptError(null);
+  }, []);
+
+  const onTranscriptFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    const token = ++transcriptTokenRef.current;
+    setTranscriptError(null);
+    f.text()
+      .then((text) => {
+        if (token !== transcriptTokenRef.current) return; // 已切换 / 移除 / 又选了新文件
+        try {
+          setTranscript(loadTranscript(text, f.name, duration));
+        } catch (err) {
+          setTranscript(null);
+          setTranscriptError(err instanceof Error ? err.message : '逐字稿无法解析。');
+        }
+      })
+      .catch(() => {
+        if (token !== transcriptTokenRef.current) return;
+        setTranscript(null);
+        setTranscriptError('文件无法读取。');
+      });
+  };
+
+  // 覆盖统计完全由当前章节与逐字稿派生：拖动 / 缩放 / 撤销 / 重命名后即时重算。
+  // 跨章 cue 在每章只取其相交片段，同一秒合并后只计一次。
+  const transcriptCoverage = useMemo(
+    () => (transcript ? coverageByChapters(chaptersApi.sortedChapters, transcript) : null),
+    [transcript, chaptersApi.sortedChapters],
+  );
+
+  // 换音频时旧逐字稿（及其在途读取）立即作废
+  useEffect(() => {
+    clearTranscript();
+  }, [fileName, clearTranscript]);
+
   const seek = useCallback(
     (t: number) => {
       const wasPlaying = engine.playing;
@@ -577,6 +633,13 @@ export default function App() {
           onChange={onImportFileInput}
           hidden
         />
+        <input
+          ref={transcriptInputRef}
+          type="file"
+          accept=".vtt,text/vtt"
+          onChange={onTranscriptFileInput}
+          hidden
+        />
         <button
           disabled={chapters.length === 0}
           onClick={() => downloadFile(`${baseName}.vtt`, toWebVTT(chapters), 'text/vtt')}
@@ -714,6 +777,19 @@ export default function App() {
                 onQuietDbChange={changeQuietThreshold}
                 onLoudDbChange={changeLoudThreshold}
                 onToggleShow={() => setShowLoudness((s) => !s)}
+              />
+              <TranscriptPanel
+                transcript={transcript}
+                chapters={chaptersApi.sortedChapters}
+                coverage={transcriptCoverage}
+                parseError={transcriptError}
+                onPickFile={() => transcriptInputRef.current?.click()}
+                onClear={clearTranscript}
+                onSeek={(t) => {
+                  // 点击字幕：跳到该时间并开始试听（与点击质检异常色块一致）
+                  if (!playing) previewFrom(t);
+                  else seek(t);
+                }}
               />
               {selected ? (
                 <>
